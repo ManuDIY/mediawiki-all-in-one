@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  labels:
+    tier: frontend
+data:
+  config : |
+    server {
+      index index.php index.html;
+      error_log  /var/log/nginx/error.log;
+      access_log /var/log/nginx/access.log;
+      root /var/www/mediawiki;
+
+      location / {
+          try_files $uri $uri/ /index.php?$query_string;
+      }
+
+      location ~ \.php$ {
+          try_files $uri =404;
+          fastcgi_split_path_info ^(.+\.php)(/.+)$;
+          fastcgi_pass 127.0.0.1:9000;
+          fastcgi_index index.php;
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+          fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+    }
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mediawiki-www
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: faster
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediawiki
+spec:
+  ports:
+  - port: 80
+  selector:
+    tier: frontend
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediawiki
+  labels:
+    tier: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mediawiki
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        app: mediawiki
+        tier: frontend
+    spec:
+      imagePullSecrets:
+      - name: local-registry
+      containers:
+      - name: mediawiki
+        image: ansilh/mediawiki-frontend:0.0.1
+        imagePullPolicy: Always
+        command : ["/startup.sh"]
+        ports:
+        - containerPort: 80
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/conf.d
+        - name: www
+          mountPath: /var/www/
+      initContainers:
+      - name: installer
+        image: ansilh/mediawiki-installer:0.0.1
+        imagePullPolicy: Always
+        env:
+        - name: MEDIA_WIKI_VERSION
+          value: "1.33"
+        - name: MEDIA_WIKI_SUB_VERSION
+          value: "0"
+        - name: MEDIA_WIKI_NAME
+          value: "mStakX"
+        - name: MEDIA_WIKI_USER
+          value: "mediawiki"
+        - name: MEDIA_WIKI_PASS
+          value: "mediawiki"
+        - name: MEDIA_WIKI_DB_USER
+          value: "mediawiki"
+        - name: MEDIA_WIKI_DB_PASS
+          value: "mediawiki"
+        - name: MEDIA_WIKI_INSTALL_DB_USER
+          value: "root"
+        - name: MEDIA_WIKI_INSTALL_DB_PASS
+          value: "password"
+        - name: MEDIA_WIKI_DB_TYPE
+          value: "mysql"
+        - name: MEDIA_WIKI_DB_NAME
+          value: "mstakx"
+        - name: MEDIA_WIKI_DB_SERVER
+          value: "mysql"
+        command: ["/install.sh"]
+        volumeMounts:
+        - name: www
+          mountPath: /var/www/
+      volumes:
+      - name: www
+        persistentVolumeClaim:
+          claimName: mediawiki-www
+      - name: config
+        configMap:
+          name: nginx-config
+          items:
+          - key: config
+            path: site.conf
