@@ -1,6 +1,8 @@
 FROM alpine:3.9
 
 LABEL maintainer="Ansil H <ansilh@gmail.com>"
+LABEL version="0.0.1"
+LABEL description="MediaWiki installer image should be started  as InitContainer before Nginx+php container"
 
 ENV NGINX_VERSION 1.17.1
 ENV NJS_VERSION   0.3.3
